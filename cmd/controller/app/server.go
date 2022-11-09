@@ -5,6 +5,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"k8s.io/client-go/rest"
 	"time"
 
 	"github.com/IBM/controller-filtered-cache/filteredcache"
@@ -130,10 +131,17 @@ func Run(o *options.ControllerRunOptions, ctx context.Context) error {
 		},
 	}
 
+	inClusterConfig, err := rest.InClusterConfig()
+	if err != nil {
+		klog.Error(err, "unable to get InClusterConfig")
+		return err
+	}
+
 	mgr, err := ctrl.NewManager(kubeConfig, ctrl.Options{
 		Scheme:                 scheme,
 		LeaderElectionID:       "foundation-controller",
 		LeaderElection:         o.EnableLeaderElection,
+		LeaderElectionConfig:   inClusterConfig,
 		HealthProbeBindAddress: ":8000",
 		NewCache:               filteredcache.NewFilteredCacheBuilder(gvkLabelMap),
 	})
