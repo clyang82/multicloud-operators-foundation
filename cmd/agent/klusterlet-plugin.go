@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"embed"
 
+	"github.com/spf13/pflag"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -16,12 +18,20 @@ type KlusterletPluginController interface {
 	//SetRecorder(r record.EventRecorder)
 }
 
+type KlusterletPluginStarter interface {
+	Start(ctx context.Context)
+}
+
 type KlusterletPlugin struct {
 
 	// the name of KlusterletPlugin
 	Name string
 
 	reconcilers []reconcile.Reconciler
+
+	starters []KlusterletPluginStarter
+
+	fs *pflag.FlagSet
 
 	options ctrl.Options
 
@@ -70,7 +80,21 @@ func (k *KlusterletPlugin) WithReconciler(r reconcile.Reconciler) *KlusterletPlu
 	return k
 }
 
-func (k *KlusterletPlugin) Complete(mgr ctrl.Manager) (*KlusterletPlugin, error) {
+func (k *KlusterletPlugin) WithStarter(s KlusterletPluginStarter) *KlusterletPlugin {
+	//TODO
+	if k.starters == nil {
+		k.starters = make([]KlusterletPluginStarter, 0)
+	}
+	k.starters = append(k.starters, s)
+	return k
+}
+
+func (k *KlusterletPlugin) WithFlags(fs *pflag.FlagSet) *KlusterletPlugin {
+	k.fs = fs
+	return k
+}
+
+func (k *KlusterletPlugin) Complete(ctx context.Context, mgr ctrl.Manager) (*KlusterletPlugin, error) {
 	//TODO
 	for _, r := range k.reconcilers {
 		addon := r.(KlusterletPluginController)
@@ -79,6 +103,10 @@ func (k *KlusterletPlugin) Complete(mgr ctrl.Manager) (*KlusterletPlugin, error)
 		if err := addon.SetupWithManager(mgr); err != nil {
 			return nil, err
 		}
+	}
+
+	for _, s := range k.starters {
+		go s.Start(ctx)
 	}
 	return k, nil
 }

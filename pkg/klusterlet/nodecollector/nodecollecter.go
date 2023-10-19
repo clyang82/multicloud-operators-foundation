@@ -85,18 +85,21 @@ type resourceCollector struct {
 func NewCollector(
 	nodeInformer corev1informers.NodeInformer,
 	kubeClient kubernetes.Interface,
-	client client.Client, clusterName, componentNamespace string, enableNodeCapacity bool) Collector {
+	clusterName, componentNamespace string, enableNodeCapacity bool) Collector {
 	return &resourceCollector{
 		nodeLister:         nodeInformer.Lister(),
 		nodeSynced:         nodeInformer.Informer().HasSynced,
 		kubeClient:         kubeClient,
-		client:             client,
 		clusterName:        clusterName,
 		server:             defaultServer,
 		tokenFile:          defaultTokenFile,
 		componentNamespace: componentNamespace,
 		enableNodeCapacity: enableNodeCapacity,
 	}
+}
+
+func (r *resourceCollector) SetClient(client client.Client) {
+	r.client = client
 }
 
 func (r *resourceCollector) Start(ctx context.Context) {

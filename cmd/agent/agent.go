@@ -16,6 +16,7 @@ import (
 	actionctrl "github.com/stolostron/multicloud-operators-foundation/pkg/klusterlet/action"
 	clusterclaimctl "github.com/stolostron/multicloud-operators-foundation/pkg/klusterlet/clusterclaim"
 	clusterinfoctl "github.com/stolostron/multicloud-operators-foundation/pkg/klusterlet/clusterinfo"
+	"github.com/stolostron/multicloud-operators-foundation/pkg/klusterlet/nodecollector"
 	viewctrl "github.com/stolostron/multicloud-operators-foundation/pkg/klusterlet/view"
 	"github.com/stolostron/multicloud-operators-foundation/pkg/utils"
 	restutils "github.com/stolostron/multicloud-operators-foundation/pkg/utils/rest"
@@ -191,7 +192,7 @@ func startManager(o *options.AgentOptions, ctx context.Context) {
 			os.Exit(1)
 		}
 
-		klusterletPlugin.Complete(mgr)
+		klusterletPlugin.Complete(ctx, mgr)
 
 		componentNamespace := o.ComponentNamespace
 		if len(componentNamespace) == 0 {
@@ -257,7 +258,7 @@ func NewKlusterletPlugin(ctx context.Context,
 	if len(componentNamespace) == 0 {
 		componentNamespace, err = utils.GetComponentNamespace()
 		if err != nil {
-			return nil, fmt.Errorf("Failed to get pod namespace %v", err)
+			return nil, fmt.Errorf("failed to get pod namespace %v", err)
 		}
 	}
 
@@ -305,14 +306,12 @@ func NewKlusterletPlugin(ctx context.Context,
 	}
 
 	// Need to consider how to start
-	// resourceCollector := nodecollector.NewCollector(
-	// 	kubeInformerFactory.Core().V1().Nodes(),
-	// 	managedClusterKubeClient,
-	// 	mgr.GetClient(),
-	// 	o.ClusterName,
-	// 	componentNamespace,
-	// 	o.EnableNodeCapacity)
-	// go resourceCollector.Start(ctx)
+	resourceCollector := nodecollector.NewCollector(
+		kubeInformerFactory.Core().V1().Nodes(),
+		managedClusterKubeClient,
+		o.ClusterName,
+		componentNamespace,
+		o.EnableNodeCapacity)
 
 	return (&KlusterletPlugin{
 		Name: "workmgr",
@@ -323,5 +322,7 @@ func NewKlusterletPlugin(ctx context.Context,
 		WithReconciler(actionReconciler).
 		WithReconciler(viewReconciler).
 		WithReconciler(&clusterInfoReconciler).
-		WithReconciler(clusterClaimReconciler), nil
+		WithReconciler(clusterClaimReconciler).
+		WithStarter(resourceCollector).
+		WithFlags(pflag.CommandLine), nil
 }
