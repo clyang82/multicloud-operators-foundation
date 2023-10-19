@@ -20,6 +20,7 @@ type KlusterletPluginController interface {
 
 type KlusterletPluginStarter interface {
 	Start(ctx context.Context)
+	SetClient(c client.Client)
 }
 
 type KlusterletPlugin struct {
@@ -97,16 +98,18 @@ func (k *KlusterletPlugin) WithFlags(fs *pflag.FlagSet) *KlusterletPlugin {
 func (k *KlusterletPlugin) Complete(ctx context.Context, mgr ctrl.Manager) (*KlusterletPlugin, error) {
 	//TODO
 	for _, r := range k.reconcilers {
-		addon := r.(KlusterletPluginController)
-		addon.SetClient(mgr.GetClient())
-		//addon.SetRecorder(mgr.GetEventRecorderFor(k.Name))
-		if err := addon.SetupWithManager(mgr); err != nil {
+		controller := r.(KlusterletPluginController)
+		controller.SetClient(mgr.GetClient())
+		//controller.SetRecorder(mgr.GetEventRecorderFor(k.Name))
+		if err := controller.SetupWithManager(mgr); err != nil {
 			return nil, err
 		}
 	}
 
 	for _, s := range k.starters {
-		go s.Start(ctx)
+		starter := s.(KlusterletPluginStarter)
+		starter.SetClient(mgr.GetClient())
+		go starter.Start(ctx)
 	}
 	return k, nil
 }

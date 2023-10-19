@@ -60,6 +60,7 @@ const (
 type Collector interface {
 	// Start starts a goroutine to update lease
 	Start(ctx context.Context)
+	SetClient(c client.Client)
 }
 
 type queryResult struct {
