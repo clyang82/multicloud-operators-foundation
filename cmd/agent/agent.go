@@ -297,7 +297,7 @@ func NewKlusterletPlugin(ctx context.Context,
 		ctrl.Log.WithName("controllers").WithName("ClusterClaim"),
 		o.ClusterName,
 		managedClusterClusterClient,
-		clusterInformerFactory.Cluster().V1alpha1().ClusterClaims().Lister(),
+		clusterInformerFactory.Cluster().V1alpha1().ClusterClaims(),
 		clusterClaimer.GenerateExpectClusterClaims,
 		o.EnableSyncLabelsToClusterClaims,
 	)

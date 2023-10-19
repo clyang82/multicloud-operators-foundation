@@ -18,7 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/klog"
 	clusterclientset "open-cluster-management.io/api/client/cluster/clientset/versioned"
-	clusterv1alpha1lister "open-cluster-management.io/api/client/cluster/listers/cluster/v1alpha1"
+	clusterv1alpha1informer "open-cluster-management.io/api/client/cluster/informers/externalversions/cluster/v1alpha1"
 	clusterv1alpha1 "open-cluster-management.io/api/cluster/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -28,7 +28,7 @@ func NewClusterClaimReconciler(
 	log logr.Logger,
 	clusterName string,
 	clusterClient clusterclientset.Interface,
-	clusterClaimLister clusterv1alpha1lister.ClusterClaimLister,
+	clusterClaimInformer clusterv1alpha1informer.ClusterClaimInformer,
 	generateExpectClusterClaims func() ([]*clusterv1alpha1.ClusterClaim, error),
 	enableSyncLabelsToClaim bool) (*clusterClaimReconciler, error) {
 
@@ -49,7 +49,7 @@ func NewClusterClaimReconciler(
 		log:                         log,
 		clusterName:                 clusterName,
 		clusterClient:               clusterClient,
-		clusterClaimLister:          clusterClaimLister,
+		clusterClaimInformer:        clusterClaimInformer,
 		generateExpectClusterClaims: generateExpectClusterClaims,
 		hubManagedSelector:          labels.NewSelector().Add(*hubManaged).Add(*notCustomizedOnly),
 		customizedOnlyselector:      labels.NewSelector().Add(*hubManaged).Add(*customizedOnly),
@@ -62,7 +62,7 @@ type clusterClaimReconciler struct {
 	log                         logr.Logger
 	clusterName                 string
 	clusterClient               clusterclientset.Interface
-	clusterClaimLister          clusterv1alpha1lister.ClusterClaimLister
+	clusterClaimInformer        clusterv1alpha1informer.ClusterClaimInformer
 	hubClient                   client.Client
 	generateExpectClusterClaims func() ([]*clusterv1alpha1.ClusterClaim, error)
 
@@ -107,7 +107,7 @@ func (r *clusterClaimReconciler) syncClaims(ctx context.Context) error {
 	}
 
 	// List existing claims then fileter out stable claims
-	existClusterClaims, err := r.clusterClaimLister.List(r.hubManagedSelector)
+	existClusterClaims, err := r.clusterClaimInformer.Lister().List(r.hubManagedSelector)
 	if err != nil {
 		return err
 	}
@@ -137,7 +137,7 @@ func (r *clusterClaimReconciler) syncLabelsToClaims(ctx context.Context) error {
 	}
 
 	// List existing claims.
-	existClusterClaims, err := r.clusterClaimLister.List(r.customizedOnlyselector)
+	existClusterClaims, err := r.clusterClaimInformer.Lister().List(r.customizedOnlyselector)
 	if err != nil {
 		return err
 	}

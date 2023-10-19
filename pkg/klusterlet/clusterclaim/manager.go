@@ -18,14 +18,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
-func (r *clusterClaimReconciler) SetupWithManager(mgr ctrl.Manager, clusterInformer clusterv1alpha1informer.ClusterClaimInformer) error {
+func (r *clusterClaimReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// setup a controller for ClusterClaim with customized event source and handler
 	c, err := controller.New("ClusterClaim", mgr, controller.Options{Reconciler: r})
 	if err != nil {
 		return err
 	}
 
-	claimSource := NewClusterClaimSource(clusterInformer)
+	claimSource := NewClusterClaimSource(r.clusterClaimInformer)
 	if err := c.Watch(claimSource, NewClusterClaimEventHandler()); err != nil {
 		return err
 	}
