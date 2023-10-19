@@ -36,6 +36,10 @@ func NewActionReconciler(client client.Client,
 	}
 }
 
+func (r *ActionReconciler) SetClient(client client.Client) {
+	r.Client = client
+}
+
 func (r *ActionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("ManagedClusterAction", req.NamespacedName)
 	action := &actionv1beta1.ManagedClusterAction{}

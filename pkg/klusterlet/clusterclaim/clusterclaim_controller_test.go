@@ -227,10 +227,10 @@ func TestSyncClaims(t *testing.T) {
 		ctrl.Log,
 		testClusterName,
 		clusterClient,
-		fake.NewClientBuilder().Build(),
 		newFakeClusterClaimLister(current), func() ([]*clusterv1alpha1.ClusterClaim, error) {
 			return expected, nil
 		}, false)
+	reconciler.SetClient(fake.NewClientBuilder().Build())
 
 	if err := reconciler.syncClaims(ctx); err != nil {
 		t.Errorf("Failed to sync cluster claims: %v", err)
@@ -402,11 +402,11 @@ func TestSyncLabelsToClaims(t *testing.T) {
 		ctrl.Log,
 		testClusterName,
 		clusterClient,
-		hubClient,
 		newFakeClusterClaimLister(current),
 		func() ([]*clusterv1alpha1.ClusterClaim, error) {
 			return current, nil
 		}, true)
+	reconciler.SetClient(hubClient)
 
 	if err != nil {
 		t.Errorf("Failed to create cluster claim reconciler: %v", err)

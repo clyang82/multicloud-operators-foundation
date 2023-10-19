@@ -9,7 +9,6 @@ import (
 	"github.com/go-logr/logr"
 	clusterv1beta1 "github.com/stolostron/cluster-lifecycle-api/clusterinfo/v1beta1"
 	"github.com/stolostron/multicloud-operators-foundation/pkg/utils"
-	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -29,7 +28,6 @@ func NewClusterClaimReconciler(
 	log logr.Logger,
 	clusterName string,
 	clusterClient clusterclientset.Interface,
-	hubClient client.Client,
 	clusterClaimLister clusterv1alpha1lister.ClusterClaimLister,
 	generateExpectClusterClaims func() ([]*clusterv1alpha1.ClusterClaim, error),
 	enableSyncLabelsToClaim bool) (*clusterClaimReconciler, error) {
@@ -52,7 +50,6 @@ func NewClusterClaimReconciler(
 		clusterName:                 clusterName,
 		clusterClient:               clusterClient,
 		clusterClaimLister:          clusterClaimLister,
-		hubClient:                   hubClient,
 		generateExpectClusterClaims: generateExpectClusterClaims,
 		hubManagedSelector:          labels.NewSelector().Add(*hubManaged).Add(*notCustomizedOnly),
 		customizedOnlyselector:      labels.NewSelector().Add(*hubManaged).Add(*customizedOnly),
@@ -73,6 +70,10 @@ type clusterClaimReconciler struct {
 	customizedOnlyselector labels.Selector // used to filter claims that created by user via managedclusterinfo labels
 
 	enableSyncLabelsToClaim bool
+}
+
+func (r *clusterClaimReconciler) SetClient(client client.Client) {
+	r.hubClient = client
 }
 
 func (r *clusterClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -253,7 +254,7 @@ func createOrUpdateClusterClaim(ctx context.Context, clusterClient clusterclient
 	updateChecks []updateCheck) error {
 	oldClaim, err := clusterClient.ClusterV1alpha1().ClusterClaims().Get(ctx, newClaim.Name, metav1.GetOptions{})
 	switch {
-	case errors.IsNotFound(err):
+	case apierrors.IsNotFound(err):
 		_, err := clusterClient.ClusterV1alpha1().ClusterClaims().Create(ctx, newClaim, metav1.CreateOptions{})
 		if err != nil {
 			return fmt.Errorf("unable to create ClusterClaim: %v, %w", newClaim, err)

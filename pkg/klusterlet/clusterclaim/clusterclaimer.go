@@ -117,11 +117,16 @@ func init() {
 }
 
 type ClusterClaimer struct {
+	client.Client
 	KubeClient       kubernetes.Interface
 	ConfigV1Client   openshiftclientset.Interface
 	OauthV1Client    openshiftoauthclientset.Interface
 	Mapper           meta.RESTMapper
 	managedclusterID string
+}
+
+func (r *ClusterClaimer) SetClient(client client.Client) {
+	r.Client = client
 }
 
 // getManagedClusterID returns the managed cluster ID of the cluster.

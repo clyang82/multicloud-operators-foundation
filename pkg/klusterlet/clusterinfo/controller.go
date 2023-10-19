@@ -51,6 +51,10 @@ type clusterInfoStatusSyncer interface {
 	sync(ctx context.Context, clusterInfo *clusterv1beta1.ManagedClusterInfo) error
 }
 
+func (r *ClusterInfoReconciler) SetClient(client client.Client) {
+	r.Client = client
+}
+
 func (r *ClusterInfoReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	request := types.NamespacedName{Namespace: r.ClusterName, Name: r.ClusterName}
 	clusterInfo := &clusterv1beta1.ManagedClusterInfo{}
