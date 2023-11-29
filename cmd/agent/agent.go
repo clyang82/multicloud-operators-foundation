@@ -4,22 +4,12 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"time"
 
-	actionv1beta1 "github.com/stolostron/cluster-lifecycle-api/action/v1beta1"
-	clusterv1beta1 "github.com/stolostron/cluster-lifecycle-api/clusterinfo/v1beta1"
-	viewv1beta1 "github.com/stolostron/cluster-lifecycle-api/view/v1beta1"
 	"github.com/stolostron/multicloud-operators-foundation/cmd/agent/app"
 	"github.com/stolostron/multicloud-operators-foundation/cmd/agent/app/options"
-	actionctrl "github.com/stolostron/multicloud-operators-foundation/pkg/klusterlet/action"
-	clusterclaimctl "github.com/stolostron/multicloud-operators-foundation/pkg/klusterlet/clusterclaim"
-	clusterinfoctl "github.com/stolostron/multicloud-operators-foundation/pkg/klusterlet/clusterinfo"
-	"github.com/stolostron/multicloud-operators-foundation/pkg/klusterlet/nodecollector"
-	viewctrl "github.com/stolostron/multicloud-operators-foundation/pkg/klusterlet/view"
 	"github.com/stolostron/multicloud-operators-foundation/pkg/utils"
-	restutils "github.com/stolostron/multicloud-operators-foundation/pkg/utils/rest"
 	addonutils "open-cluster-management.io/addon-framework/pkg/utils"
 
 	openshiftclientset "github.com/openshift/client-go/config/clientset/versioned"
@@ -28,10 +18,6 @@ import (
 	"open-cluster-management.io/addon-framework/pkg/lease"
 	clusterclientset "open-cluster-management.io/api/client/cluster/clientset/versioned"
 	clusterinformers "open-cluster-management.io/api/client/cluster/informers/externalversions"
-	clusterv1alpha1 "open-cluster-management.io/api/cluster/v1alpha1"
-
-	cacheddiscovery "k8s.io/client-go/discovery/cached"
-	"k8s.io/client-go/restmapper"
 
 	"github.com/spf13/pflag"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -39,17 +25,14 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth" // Needed for misc auth.
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
-	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/component-base/cli/flag"
 	"k8s.io/component-base/logs"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
 )
 
@@ -62,16 +45,6 @@ const (
 	AddonName               = "work-manager"
 	leaseUpdateJitterFactor = 0.25
 )
-
-func init() {
-	_ = clientgoscheme.AddToScheme(scheme)
-
-	_ = actionv1beta1.AddToScheme(scheme)
-	_ = viewv1beta1.AddToScheme(scheme)
-	_ = clusterv1beta1.AddToScheme(scheme)
-	_ = clusterv1alpha1.AddToScheme(scheme)
-	// +kubebuilder:scaffold:scheme
-}
 
 func main() {
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
@@ -169,22 +142,12 @@ func startManager(o *options.AgentOptions, ctx context.Context) {
 	// the agent pods will be restarted if failed to check healthz/liveness in 30s.
 	go app.ServeHealthProbes(ctx.Done(), ":8000", cc.Check)
 
-	mgr, err := ctrl.NewManager(hubConfig, ctrl.Options{
-		Scheme:             scheme,
-		MetricsBindAddress: o.MetricsAddr,
-		Namespace:          o.ClusterName,
-	})
-	if err != nil {
-		setupLog.Error(err, "unable to start manager")
-		os.Exit(1)
-	}
-
 	run := func(ctx context.Context) {
 
 		kubeInformerFactory := informers.NewSharedInformerFactory(managedClusterKubeClient, 10*time.Minute)
 		clusterInformerFactory := clusterinformers.NewSharedInformerFactory(managedClusterClusterClient, 10*time.Minute)
 
-		klusterletPlugin, err := NewKlusterletPlugin(ctx, managedClusterConfig, managedClusterDynamicClient, managedClusterKubeClient,
+		KlusterletFeature, err := app.NewKlusterletFeature(ctx, scheme, managedClusterConfig, managedClusterDynamicClient, managedClusterKubeClient,
 			managementClusterKubeClient, routeV1Client, openshiftClient, osOauthClient, discoveryClient,
 			managedClusterClusterClient, kubeInformerFactory, clusterInformerFactory, o)
 		if err != nil {
@@ -192,7 +155,17 @@ func startManager(o *options.AgentOptions, ctx context.Context) {
 			os.Exit(1)
 		}
 
-		klusterletPlugin.Complete(ctx, mgr)
+		mgr, err := ctrl.NewManager(hubConfig, ctrl.Options{
+			Scheme:             KlusterletFeature.GetOptions().Scheme,
+			MetricsBindAddress: o.MetricsAddr,
+			Namespace:          o.ClusterName,
+		})
+		if err != nil {
+			setupLog.Error(err, "unable to start manager")
+			os.Exit(1)
+		}
+
+		KlusterletFeature.Complete(ctx, mgr)
 
 		componentNamespace := o.ComponentNamespace
 		if len(componentNamespace) == 0 {
@@ -218,111 +191,4 @@ func startManager(o *options.AgentOptions, ctx context.Context) {
 	}
 	run(context.TODO())
 	panic("unreachable")
-}
-
-func NewKlusterletPlugin(ctx context.Context,
-	managedClusterConfig *rest.Config,
-	managedClusterDynamicClient dynamic.Interface,
-	managedClusterKubeClient *kubernetes.Clientset,
-	managementClusterKubeClient *kubernetes.Clientset,
-	routeV1Client *routev1.Clientset,
-	openshiftClient *openshiftclientset.Clientset,
-	osOauthClient *openshiftoauthclientset.Clientset,
-	discoveryClient *discovery.DiscoveryClient,
-	managedClusterClusterClient *clusterclientset.Clientset,
-	kubeInformerFactory informers.SharedInformerFactory,
-	clusterInformerFactory clusterinformers.SharedInformerFactory,
-	o *options.AgentOptions, //TODO: remove this parameter
-) (*KlusterletPlugin, error) {
-
-	reloadMapper := restutils.NewReloadMapper(restmapper.NewDeferredDiscoveryRESTMapper(
-		cacheddiscovery.NewMemCacheClient(discoveryClient)))
-
-	// Add controller into manager
-	actionReconciler := &actionctrl.ActionReconciler{
-		Log:                 ctrl.Log.WithName("controllers").WithName("ManagedClusterAction"),
-		Scheme:              scheme,
-		KubeControl:         restutils.NewKubeControl(reloadMapper, managedClusterConfig),
-		EnableImpersonation: o.EnableImpersonation,
-	}
-
-	viewReconciler := &viewctrl.ViewReconciler{
-		Log:                         ctrl.Log.WithName("controllers").WithName("ManagedClusterView"),
-		Scheme:                      scheme,
-		ManagedClusterDynamicClient: managedClusterDynamicClient,
-		Mapper:                      reloadMapper,
-	}
-
-	var err error
-	componentNamespace := o.ComponentNamespace
-	if len(componentNamespace) == 0 {
-		componentNamespace, err = utils.GetComponentNamespace()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get pod namespace %v", err)
-		}
-	}
-
-	// run agent server
-	agent, err := app.AgentServerRun(o, managedClusterKubeClient)
-	if err != nil {
-		return nil, fmt.Errorf("unable to run agent server %v", err)
-	}
-
-	clusterInfoReconciler := clusterinfoctl.ClusterInfoReconciler{
-		Log:                      ctrl.Log.WithName("controllers").WithName("ManagedClusterInfo"),
-		Scheme:                   scheme,
-		NodeInformer:             kubeInformerFactory.Core().V1().Nodes(),
-		ClaimInformer:            clusterInformerFactory.Cluster().V1alpha1().ClusterClaims(),
-		ClaimLister:              clusterInformerFactory.Cluster().V1alpha1().ClusterClaims().Lister(),
-		ManagedClusterClient:     managedClusterKubeClient,
-		ManagementClusterClient:  managementClusterKubeClient,
-		DisableLoggingInfoSyncer: o.DisableLoggingInfoSyncer,
-		ClusterName:              o.ClusterName,
-		AgentName:                o.AgentName,
-		AgentNamespace:           componentNamespace,
-		AgentPort:                int32(o.AgentPort),
-		RouteV1Client:            routeV1Client,
-		ConfigV1Client:           openshiftClient,
-		Agent:                    agent,
-	}
-
-	clusterClaimer := clusterclaimctl.ClusterClaimer{
-		KubeClient:     managedClusterKubeClient,
-		ConfigV1Client: openshiftClient,
-		OauthV1Client:  osOauthClient,
-		Mapper:         reloadMapper,
-	}
-
-	clusterClaimReconciler, err := clusterclaimctl.NewClusterClaimReconciler(
-		ctrl.Log.WithName("controllers").WithName("ClusterClaim"),
-		o.ClusterName,
-		managedClusterClusterClient,
-		clusterInformerFactory.Cluster().V1alpha1().ClusterClaims(),
-		clusterClaimer.GenerateExpectClusterClaims,
-		o.EnableSyncLabelsToClusterClaims,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("unable to create ClusterClaim controller %v", err)
-	}
-
-	// Need to consider how to start
-	resourceCollector := nodecollector.NewCollector(
-		kubeInformerFactory.Core().V1().Nodes(),
-		managedClusterKubeClient,
-		o.ClusterName,
-		componentNamespace,
-		o.EnableNodeCapacity)
-
-	return (&KlusterletPlugin{
-		Name: "workmgr",
-	}).
-		WithControllerManagerOptions(manager.Options{
-			Scheme: scheme,
-		}).
-		WithReconciler(actionReconciler).
-		WithReconciler(viewReconciler).
-		WithReconciler(&clusterInfoReconciler).
-		WithReconciler(clusterClaimReconciler).
-		WithStarter(resourceCollector).
-		WithFlags(pflag.CommandLine), nil
 }
